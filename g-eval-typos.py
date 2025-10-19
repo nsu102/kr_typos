@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from openai import OpenAI
 from tqdm import tqdm
 
-# OpenRouter API 설정
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 client = OpenAI(
     api_key=OPENROUTER_API_KEY,
@@ -45,65 +44,69 @@ class GEvalTyposEvaluator:
         self.g_eval_prompt = self._create_g_eval_prompt()
 
     def _create_g_eval_prompt(self) -> str:
-        """G-EVAL 논문의 정확한 프롬프트 형식"""
-        return """You will be given one original question and two code-switched versions with their corresponding responses.
-Your task is to rate each response on four metrics.
-Please make sure you read and understand these instructions carefully. Please keep this document open while reviewing, and refer to it as needed.
+            return """You will be given one original question (without typos) and two versions of the same question with typos, along with their corresponding responses from two different models.
 
-Evaluation Criteria:
+    Your task is to rate the quality of each response based on how well the model handled the typos in the question.
 
-Helpfulness (1-10) - the ability of the response to effectively address the user's needs despite code-switching. We align this dimension with the quality of providing practical, actionable, and insightful information whereby "the response should directly answer the question and provide useful information that the user can apply or understand, regardless of the mixed language input."
+    Please make sure you read and understand these instructions carefully. Please keep this document open while reviewing, and refer to it as needed.
 
-Relevance (1-10) - the degree to which the response stays on topic. We align this dimension with focus and coherence whereby "the response should directly address the question without unnecessary tangents or irrelevant information, maintaining clear connection to the query throughout."
+    Evaluation Criteria:
 
-Accuracy (1-10) - the factual correctness and reliability of the information provided. We align this dimension with truthfulness and precision whereby "the response should contain no factual errors, misinformation, or misleading statements, and should present information that can be verified and trusted."
+    Helpfulness (1-10) - Evaluate how effectively the response meets the user's requirements and whether it provides practical and insightful information.
 
-Depth (1-10) - the level of detail and comprehensiveness in the response. We align this dimension with thoroughness and insight whereby "the response should go beyond surface-level information to provide detailed explanations, meaningful context, relevant examples, and thoughtful analysis that demonstrates deep understanding of the topic."
+    Relevance (1-10) - Measure whether the response is directly connected to the question or topic, and evaluate whether it focuses on the query context without unnecessary information.
 
-Evaluation Steps:
+    Accuracy (1-10) - Assess whether the information provided is factually accurate and reliable, and verify that it avoids errors, misinformation, or ambiguity.
 
-1. Read the original question (Korean and English) carefully and identify the main topic and key points.
-2. Read Code-switched Question A and note the code-switching pattern used.
-3. Read Response A and compare it to the original question. Check if the response demonstrates understanding of the code-switched input and addresses the user's needs effectively, stays relevant to the topic, provides accurate information, and offers sufficient depth.
-4. Assign scores for Response A on each metric (Helpfulness, Relevance, Accuracy, Depth) on a scale of 1 to 10, where 1 is the lowest and 10 is the highest based on the Evaluation Criteria.
-5. Read Code-switched Question B and note the code-switching pattern used.
-6. Read Response B and compare it to the original question. Check if the response demonstrates understanding of the code-switched input and addresses the user's needs effectively, stays relevant to the topic, provides accurate information, and offers sufficient depth.
-7. Assign scores for Response B on each metric (Helpfulness, Relevance, Accuracy, Depth) on a scale of 1 to 10, where 1 is the lowest and 10 is the highest based on the Evaluation Criteria.
+    Depth (1-10) - Evaluate the level of detail or comprehensiveness of the response, and examine whether it goes beyond the surface of the topic to provide clear explanations, meaningful context, and thoughtful analysis.
 
-Example:
+    Evaluation Steps:
 
-Original Question (Korean):
-{original_ko}
+    1. Read the original question (without typos) carefully to understand the true intent.
+    2. Read each question with typos and identify what errors exist.
+    3. Read Response A and evaluate how helpful it is in meeting the user's needs despite typos.
+    4. Read Response B and evaluate how helpful it is in meeting the user's needs despite typos.
+    5. For each response, assess whether it stays relevant to the question without unnecessary information.
+    6. For each response, verify the factual accuracy and reliability of the information provided.
+    7. For each response, check the depth - whether it provides detailed explanations, meaningful context, and thoughtful analysis.
+    8. Assign scores for each metric (Helpfulness, Relevance, Accuracy, Depth) on a scale of 1 to 10, where 1 is the lowest and 10 is the highest based on the Evaluation Criteria.
+    9. Determine the winner based on the overall quality. NO TIES ALLOWED - you must select a clear winner (A or B).
 
-Original Question (English):
-{original_en}
+    Example:
 
-Code-switched Question A ({case_a}):
-{question_a}
+    Original Question (No Typos):
+    {original_question}
 
-Response A:
-{response_a}
+    Question A (with typos):
+    {question_a}
+    Typos: {errors_a}
+    Model A: {model_a}
 
-Code-switched Question B ({case_b}):
-{question_b}
+    Response A:
+    {response_a}
 
-Response B:
-{response_b}
+    Question B (with typos):
+    {question_b}
+    Typos: {errors_b}
+    Model B: {model_b}
 
-Evaluation Form (scores ONLY):
+    Response B:
+    {response_b}
 
-{{
-    "helpfulness_a": <score 1-10>,
-    "relevance_a": <score 1-10>,
-    "accuracy_a": <score 1-10>,
-    "depth_a": <score 1-10>,
-    "helpfulness_b": <score 1-10>,
-    "relevance_b": <score 1-10>,
-    "accuracy_b": <score 1-10>,
-    "depth_b": <score 1-10>,
-    "winner": "<A or B, NO ties allowed>"
-}}
-"""
+    Evaluation Form (scores ONLY):
+
+    {{
+        "helpfulness_a": <score 1-10>,
+        "relevance_a": <score 1-10>,
+        "accuracy_a": <score 1-10>,
+        "depth_a": <score 1-10>,
+        "helpfulness_b": <score 1-10>,
+        "relevance_b": <score 1-10>,
+        "accuracy_b": <score 1-10>,
+        "depth_b": <score 1-10>,
+        "winner": "<A or B, NO ties allowed>"
+    }}
+    """
 
     def evaluate_pair(
         self,
@@ -131,13 +134,12 @@ Evaluation Form (scores ONLY):
             response_b=response_b[:2000]
         )
 
-        # Retry logic for rate limits
+        
         max_retries = 5
-        retry_delay = 3  # Initial delay in seconds
+        retry_delay = 3
 
         for attempt in range(max_retries):
             try:
-                # G-EVAL 논문에 따라 Form-filling 방식으로 평가
                 response = client.chat.completions.create(
                     model=self.model_name,
                     messages=[
@@ -151,13 +153,11 @@ Evaluation Form (scores ONLY):
 
                 result_text = response.choices[0].message.content.strip()
 
-                # JSON 파싱
                 result = json.loads(result_text)
-                break  # Success, exit retry loop
+                break 
 
             except Exception as e:
                 error_str = str(e)
-                # Check if it's a rate limit error
                 if "rate_limit" in error_str.lower() or "429" in error_str:
                     print(error_str)
                     if attempt < max_retries - 1:
@@ -387,17 +387,9 @@ Evaluation Form (scores ONLY):
                         print(f"❌ 오류 발생 (idx={idx}): {e}")
                         pbar.update(1)
 
-        # 최종 결과 저장
-        print(f"💾 최종 결과 저장 중: {output_file}")
-        self._save_results(results, output_file)
-        
-        # 체크포인트 파일 삭제
+        self._save_results(results, output_file)        
         if os.path.exists(checkpoint_file):
             os.remove(checkpoint_file)
-            print(f"🗑️  체크포인트 파일 삭제: {checkpoint_file}")
-
-        # 통계 출력
-        self._print_statistics(results)
 
         return results
     
@@ -453,86 +445,6 @@ Evaluation Form (scores ONLY):
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(results_dict, f, ensure_ascii=False, indent=2)
 
-    def _print_statistics(self, results: List[ComparisonResult]):
-        """평가 통계 출력"""
-        print("\n" + "="*70)
-        print("📈 G-Eval 평가 결과 통계")
-        print("="*70)
-
-        # 전체 승률 (A = 첫 번째 타입, B = 두 번째 타입)
-        total = len(results)
-        wins_a = sum(1 for r in results if r.winner == 'A')
-        wins_b = sum(1 for r in results if r.winner == 'B')
-
-        print(f"🏆 전체 승률 (A=첫번째 타입, B=두번째 타입, 동점 없음):")
-        print(f"  - Type A 승: {wins_a} ({wins_a/total*100:.1f}%)")
-        print(f"  - Type B 승: {wins_b} ({wins_b/total*100:.1f}%)")
-
-        # 모델별 통계
-        for model in ['qwen_72b', 'qwen_7b']:
-            filtered = [r for r in results if model in r.error_type]
-            if not filtered:
-                continue
-
-            count = len(filtered)
-            wins_a_model = sum(1 for r in filtered if r.winner == 'A')
-            wins_b_model = sum(1 for r in filtered if r.winner == 'B')
-
-            print(f"📊 {model} 통계 (n={count}):")
-            print(f"  - Type A 승: {wins_a_model} ({wins_a_model/count*100:.1f}%)")
-            print(f"  - Type B 승: {wins_b_model} ({wins_b_model/count*100:.1f}%)")
-        
-        # 오탈자 개수별 통계
-        for error_level in ['1_error', '2_errors']:
-            filtered = [r for r in results if error_level in r.error_type]
-            if not filtered:
-                continue
-
-            count = len(filtered)
-            wins_a_level = sum(1 for r in filtered if r.winner == 'A')
-            wins_b_level = sum(1 for r in filtered if r.winner == 'B')
-
-            print(f"📊 {error_level} 통계 (n={count}):")
-            print(f"  - Type A 승: {wins_a_level} ({wins_a_level/count*100:.1f}%)")
-            print(f"  - Type B 승: {wins_b_level} ({wins_b_level/count*100:.1f}%)")
-
-        # 평균 점수 (1-10 척도)
-        avg_score_a = sum(r.score_a for r in results) / total
-        avg_score_b = sum(r.score_b for r in results) / total
-
-        print(f"⭐ 평균 점수 (1-10 척도):")
-        print(f"  - Type A (첫번째 타입): {avg_score_a:.3f}/10.0")
-        print(f"  - Type B (두번째 타입): {avg_score_b:.3f}/10.0")
-
-        print(f"📊 평가 기준별 평균 점수:")
-        
-        # 실제 메트릭별 평균 계산
-        avg_helpfulness_a = sum(r.metrics_a['helpfulness'] for r in results) / total
-        avg_relevance_a = sum(r.metrics_a['relevance'] for r in results) / total
-        avg_accuracy_a = sum(r.metrics_a['accuracy'] for r in results) / total
-        avg_depth_a = sum(r.metrics_a['depth'] for r in results) / total
-        
-        avg_helpfulness_b = sum(r.metrics_b['helpfulness'] for r in results) / total
-        avg_relevance_b = sum(r.metrics_b['relevance'] for r in results) / total
-        avg_accuracy_b = sum(r.metrics_b['accuracy'] for r in results) / total
-        avg_depth_b = sum(r.metrics_b['depth'] for r in results) / total
-        
-        print("  Type A (첫번째 타입):")
-        print(f"    - 유용성 (Helpfulness): {avg_helpfulness_a:.2f}/10.0")
-        print(f"    - 관련성 (Relevance): {avg_relevance_a:.2f}/10.0")
-        print(f"    - 정확성 (Accuracy): {avg_accuracy_a:.2f}/10.0")
-        print(f"    - 깊이 (Depth): {avg_depth_a:.2f}/10.0")
-        print("  Type B (두번째 타입):")
-        print(f"    - 유용성 (Helpfulness): {avg_helpfulness_b:.2f}/10.0")
-        print(f"    - 관련성 (Relevance): {avg_relevance_b:.2f}/10.0")
-        print(f"    - 정확성 (Accuracy): {avg_accuracy_b:.2f}/10.0")
-        print(f"    - 깊이 (Depth): {avg_depth_b:.2f}/10.0")
-
-        print(f"\n📊 종합 분석:")
-        print(f"  - 점수 차이: {abs(avg_score_a - avg_score_b):.3f}")
-        print(f"  - 승률 차이: {abs(wins_a - wins_b)/total*100:.1f}%")
-        print("="*70)
-
 
 def main():
     """메인 실행 함수"""
@@ -562,20 +474,12 @@ def main():
                         help="체크포인트 저장 주기")
     args = parser.parse_args()
 
-    # 평가기 초기화
     evaluator = GEvalTyposEvaluator(model_name=args.model)
 
-    print(f"📊 평가 설정:")
-    print(f"  - 입력 파일: {args.input_file}")
-    print(f"  - 출력 파일: {args.output_file}")
-    print(f"  - 모델: {args.model}")
-    print(f"  - 워커 수: {args.workers}")
-    print(f"  - 체크포인트 주기: {args.checkpoint_every}개마다")
     if args.limit:
         print(f"  - 평가 제한: {args.limit}개 항목")
 
-    # 평가 실행 (멀티스레딩 + checkpoint)
-    results = evaluator.run_evaluation(
+    evaluator.run_evaluation(
         data_file=args.input_file,
         output_file=args.output_file,
         max_workers=args.workers,
@@ -583,7 +487,6 @@ def main():
         checkpoint_every=args.checkpoint_every
     )
 
-    print(f"\n✅ 평가 완료! 결과는 {args.output_file}에 저장되었습니다.")
 
 
 if __name__ == "__main__":
