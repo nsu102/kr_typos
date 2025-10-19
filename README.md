@@ -1,13 +1,13 @@
-# Korean Typo Generator & G-Eval Code-Switching Evaluator
+# Korean Typo Generator & G-Eval Evaluator
 
-한글 오타 생성 및 코드 스위칭 응답 평가를 위한 연구 프로젝트
+한글 오타 생성 및 오탈자 응답 평가를 위한 연구 프로젝트
 
 ## 프로젝트 개요
 
 이 프로젝트는 두 가지 주요 기능을 제공합니다:
 
 1. **한글 오타 생성기** (`make_typos.py`): 한글 문장에 대해 5가지 유형의 체계적인 오타를 생성
-2. **G-Eval 평가기** (`g-eval-cs.py`): 코드 스위칭 질문에 대한 언어 모델 응답을 G-Eval 방법론으로 평가
+2. **G-Eval 평가기** (`g-eval-typos.py`): 오탈자가 포함된 질문에 대한 언어 모델 응답을 G-Eval 방법론으로 평가
 
 ## 주요 기능
 
@@ -65,13 +65,13 @@ python make_typos.py --input data/mkqa_kr.json --output data/typos_data.json
 ]
 ```
 
-### 2. G-Eval 평가 (`g-eval-cs.py`)
+### 2. G-Eval 평가 (`g-eval-typos.py`)
 
-G-Eval 방법론을 사용하여 코드 스위칭 질문에 대한 언어 모델 응답을 평가합니다.
+G-Eval 방법론을 사용하여 오탈자가 포함된 질문에 대한 언어 모델 응답을 평가합니다.
 
 #### 평가 기준 (4가지 메트릭)
 
-1. **Helpfulness (유용성)** - 사용자 요구를 효과적으로 충족 (1-10)
+1. **Helpfulness (유용성)** - 오탈자에도 불구하고 사용자 요구를 효과적으로 충족 (1-10)
 2. **Relevance (관련성)** - 주제와의 연관성 유지 (1-10)
 3. **Accuracy (정확성)** - 정보의 사실적 정확성 (1-10)
 4. **Depth (깊이)** - 응답의 상세함과 포괄성 (1-10)
@@ -80,39 +80,47 @@ G-Eval 방법론을 사용하여 코드 스위칭 질문에 대한 언어 모델
 
 #### 평가 방식
 
-- **5C2 방식**: 5개 Case 중 2개를 선택하여 쌍별 비교 (총 10개 조합)
-- **평가 모델**: qwen_72b, qwen_7b 각각 독립 평가
+- **오타 유형 간 비교**: 5가지 오타 유형 중 2개를 선택하여 쌍별 비교 (5C2 = 10개 조합)
+- **오류 레벨별 평가**: 1개 오류 vs 1개 오류, 2개 오류 vs 2개 오류 각각 독립 평가
+- **모델별 평가**: qwen_72b, qwen_7b 각각 독립 평가
+- **승자 선정**: 동점 없이 반드시 A 또는 B 중 승자 결정
 - **멀티스레딩**: 병렬 처리로 빠른 평가
 - **체크포인트**: 진행 상황 자동 저장 및 복구
 
 #### 사용법
 
 ```bash
-python g-eval-cs.py \
-  --input_file data/response_data_typo.json \
-  --output_file data/g_eval_results.json \
+python g-eval-typos.py \
+  --input_file data/outputs/typos/typos_data_filled.json \
+  --output_file data/outputs/typos/g_eval_results.json \
   --model openai/gpt-4o-mini \
   --workers 3 \
   --checkpoint_every 50
 ```
 
 **주요 옵션**:
-- `--input_file`: 입력 데이터 파일 경로
-- `--output_file`: 출력 결과 파일 경로
-- `--model`: 평가용 LLM 모델 (기본값: gpt-4o-mini)
-- `--workers`: 멀티스레딩 워커 수 (기본값: 3)
-- `--limit`: 평가할 항목 수 제한 (선택사항)
+- `--input_file`: 입력 데이터 파일 경로 (기본값: data/outputs/typos/typos_data_filled.json)
+- `--output_file`: 출력 결과 파일 경로 (기본값: data/outputs/typos/g_eval_results.json)
+- `--model`: 평가용 LLM 모델 (기본값: openai/gpt-4o-mini)
+- `--workers`: 멀티스레딩 워커 수 (기본값: 3, rate limit 고려하여 낮게 설정 권장)
+- `--limit`: 평가할 항목 수 제한 (선택사항, 테스트용)
 - `--checkpoint_every`: 체크포인트 저장 주기 (기본값: 50)
 
 ## 프로젝트 구조
 
 ```
 kr_typos/
-├── make_typos.py           # 한글 오타 생성기
-├── g-eval-cs.py           # G-Eval 평가기
+├── make_typos.py              # 한글 오타 생성기
+├── g-eval-typos.py           # G-Eval 오탈자 평가기
+├── g-eval-cs.py              # G-Eval 코드스위칭 평가기 (별도)
 ├── data/
-│   ├── mkqa_kr.json       # 입력 한글 문장 데이터 (120KB)
-│   └── typos_data.json    # 생성된 오타 데이터 (3.5MB)
+│   ├── mkqa_kr.json          # 입력 한글 문장 데이터 (120KB)
+│   ├── typos_data.json       # 생성된 오타 데이터 (3.5MB)
+│   └── outputs/
+│       └── typos/
+│           ├── typos_data_filled.json        # 모델 응답이 채워진 오타 데이터
+│           ├── g_eval_results.json           # G-Eval 평가 결과
+│           └── g_eval_results.json.ckpt.json # 체크포인트 (자동 생성)
 └── README.md
 ```
 
@@ -122,6 +130,8 @@ kr_typos/
 |------|------|------|
 | mkqa_kr.json | 120KB | MKQA 데이터셋의 한글 문장 |
 | typos_data.json | 3.5MB | 5가지 오타 유형 × 2개 오류 버전 |
+| typos_data_filled.json | - | 모델 응답이 포함된 오타 데이터 |
+| g_eval_results.json | - | G-Eval 평가 결과 |
 
 ## 환경 설정
 
@@ -170,29 +180,31 @@ python make_typos.py \
 ### 2. G-Eval 평가 실행
 
 ```bash
-python g-eval-cs.py \
-  --input_file data/code_switched_response.json \
-  --output_file data/g_eval_results.json \
-  --workers 5 \
+python g-eval-typos.py \
+  --input_file data/outputs/typos/typos_data_filled.json \
+  --output_file data/outputs/typos/g_eval_results.json \
+  --workers 3 \
   --checkpoint_every 50
 ```
 
 ### 3. 평가 결과 확인
 
 평가 완료 시 자동으로 통계 출력:
-- 모델별 평균 점수
-- 메트릭별 평균 점수
-- Case 간 점수 차이
-- 종합 분석
+- **전체 승률**: 오타 유형별 승패 통계 (동점 없음)
+- **모델별 통계**: qwen_72b, qwen_7b 각각의 결과
+- **오류 레벨별 통계**: 1개 오류 vs 2개 오류 비교
+- **평균 점수**: 각 오타 유형의 4가지 메트릭별 평균
+- **종합 분석**: 점수 차이 및 승률 차이
 
 ## 연구 질문
 
 이 프로젝트는 다음 연구 질문에 답하기 위해 설계되었습니다:
 
-1. 오타가 있는 코드 스위칭 입력에 대해 언어 모델이 얼마나 강건한가?
-2. 오타 유형에 따라 모델 성능이 어떻게 달라지는가?
-3. 오타 개수가 증가할수록 응답 품질이 얼마나 저하되는가?
-4. 모델 크기(72B vs 7B)가 오타 처리 능력에 영향을 주는가?
+1. **오타 강건성**: 오탈자가 포함된 입력에 대해 언어 모델이 얼마나 강건한가?
+2. **오타 유형별 영향**: 교체/삭제/추가/전치/띄어쓰기 중 어떤 오타 유형이 모델 성능에 가장 큰 영향을 미치는가?
+3. **오류 개수 영향**: 오타 개수가 1개에서 2개로 증가할 때 응답 품질이 얼마나 저하되는가?
+4. **모델 크기 효과**: 모델 크기(72B vs 7B)가 오타 처리 능력에 영향을 주는가?
+5. **상대적 비교**: 같은 오류 레벨 내에서 오타 유형 간 상대적 우위가 존재하는가?
 
 ## 주의사항
 
